@@ -16,3 +16,4 @@ __pycache__/
 
 # Streamlit local secrets file (if you ever add one)
 .streamlit/secrets.toml
+secure_notes_data/
