@@ -115,12 +115,17 @@ if not st.session_state.logged_in:
             if not cred_ids:
                 st.caption("No passkey registered for this username yet.")
             else:
-                auth_options = webauthn_utils.build_authentication_options(cred_ids)
-                auth_options_json = options_to_json(auth_options)
-                st.session_state["_pending_auth_challenge"] = bytes_to_base64url(auth_options.challenge)
+                # Same fix as registration: only issue a fresh challenge for
+                # a genuinely new attempt, not on every rerun (which would
+                # otherwise replace it right before it's verified).
+                if st.session_state.get("_pending_auth_username") != bio_username.strip():
+                    auth_options = webauthn_utils.build_authentication_options(cred_ids)
+                    st.session_state["_pending_auth_options_json"] = options_to_json(auth_options)
+                    st.session_state["_pending_auth_challenge"] = bytes_to_base64url(auth_options.challenge)
+                    st.session_state["_pending_auth_username"] = bio_username.strip()
 
                 bio_result = webauthn_prompt(
-                    "authenticate", auth_options_json, key="login_passkey_widget"
+                    "authenticate", st.session_state["_pending_auth_options_json"], key="login_passkey_widget"
                 )
                 if bio_result.result:
                     payload = bio_result.result
@@ -148,6 +153,9 @@ if not st.session_state.logged_in:
                                 if login_err:
                                     st.error(login_err)
                                 else:
+                                    st.session_state.pop("_pending_auth_challenge", None)
+                                    st.session_state.pop("_pending_auth_options_json", None)
+                                    st.session_state.pop("_pending_auth_username", None)
                                     st.session_state.logged_in = True
                                     st.session_state.user_id = login_uid
                                     st.session_state.username = db.get_username(login_uid)
@@ -534,14 +542,22 @@ else:
         nickname = st.text_input("Name this device (e.g. \"My Laptop\", \"iPhone\")", key="new_device_nickname")
 
         if nickname.strip():
-            reg_options = webauthn_utils.build_registration_options(
-                user_id, st.session_state.username, db.get_credential_ids_for_user(user_id)
-            )
-            reg_options_json = options_to_json(reg_options)
-            st.session_state["_pending_reg_challenge"] = bytes_to_base64url(reg_options.challenge)
+            # Only generate a fresh challenge when this is a genuinely new
+            # attempt (nickname just changed / first time). Regenerating it
+            # on every rerun -- including the rerun that happens right after
+            # the browser ceremony completes -- would replace the challenge
+            # before it's ever checked against, making verification always
+            # fail with "unexpected challenge."
+            if st.session_state.get("_pending_reg_nickname") != nickname.strip():
+                reg_options = webauthn_utils.build_registration_options(
+                    user_id, st.session_state.username, db.get_credential_ids_for_user(user_id)
+                )
+                st.session_state["_pending_reg_options_json"] = options_to_json(reg_options)
+                st.session_state["_pending_reg_challenge"] = bytes_to_base64url(reg_options.challenge)
+                st.session_state["_pending_reg_nickname"] = nickname.strip()
 
             result = webauthn_prompt(
-                "register", reg_options_json, key="register_passkey_widget"
+                "register", st.session_state["_pending_reg_options_json"], key="register_passkey_widget"
             )
             if result.result:
                 payload = result.result
@@ -555,6 +571,9 @@ else:
                             cred_json, st.session_state["_pending_reg_challenge"]
                         )
                         db.add_credential(user_id, cred_id, pub_key, sign_count, nickname.strip())
+                        st.session_state.pop("_pending_reg_challenge", None)
+                        st.session_state.pop("_pending_reg_options_json", None)
+                        st.session_state.pop("_pending_reg_nickname", None)
                         st.success(f"'{nickname.strip()}' registered.")
                         st.rerun()
                     except Exception as e:
