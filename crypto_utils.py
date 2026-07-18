@@ -140,3 +140,62 @@ def server_key_from_secret(secret: str) -> bytes:
     """Turns the server's own secret string into a 256-bit AES key, used
     to wrap/unwrap master keys for the email-OTP reset path."""
     return hashlib.sha256(secret.encode("utf-8")).digest()
+
+
+
+# --- Per-user keypairs (for sharing notes with other accounts) -----------
+# Sharing an AES-GCM-encrypted note with another account can't just flip a
+# "visible" flag -- the note is only decryptable with the owner's own key,
+# which nobody else has or should have. Instead, every account also gets
+# an RSA keypair at signup. To share a note with someone, we generate a
+# fresh one-time AES key, encrypt a copy of the note with it, and then
+# encrypt THAT key with the recipient's public key. Only their matching
+# private key (unlocked by their own password, same as everything else)
+# can open it. The original owner's key is never exposed to anyone.
+
+from cryptography.hazmat.primitives.asymmetric import rsa, padding as asym_padding
+from cryptography.hazmat.primitives import serialization
+
+RSA_KEY_SIZE = 2048
+
+
+def generate_keypair():
+    """Returns (private_key_pem: bytes, public_key_pem: bytes)."""
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=RSA_KEY_SIZE)
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return private_pem, public_pem
+
+
+def rsa_encrypt(public_key_pem: bytes, data: bytes) -> bytes:
+    """Encrypts a small payload (we only ever use this for a 32-byte AES
+    key, well within RSA-2048's size limit) with someone's public key."""
+    public_key = serialization.load_pem_public_key(public_key_pem)
+    return public_key.encrypt(
+        data,
+        asym_padding.OAEP(
+            mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+
+
+def rsa_decrypt(private_key_pem: bytes, ciphertext: bytes) -> bytes:
+    """Decrypts with your own private key."""
+    private_key = serialization.load_pem_private_key(private_key_pem, password=None)
+    return private_key.decrypt(
+        ciphertext,
+        asym_padding.OAEP(
+            mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
