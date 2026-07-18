@@ -403,7 +403,7 @@ else:
                         else:
                             st.error(error)
 
-                my_shares = [s for s in db.list_my_shares(user_id) if s["source_note_id"] == note["id"]]
+               my_shares = [s for s in db.list_my_shares(user_id) if s["source_note_id"] == note["id"]]
                 if my_shares:
                     st.caption("Currently shared with:")
                     for s in my_shares:
@@ -414,6 +414,28 @@ else:
                             if st.button("Revoke", key=f"revoke_{s['share_id']}"):
                                 db.unshare(s["share_id"], user_id)
                                 st.rerun()
+
+                # --- Share externally (WhatsApp / Instagram) ---
+                st.divider()
+                st.subheader("Share externally (WhatsApp / Instagram)")
+                st.warning(
+                    "This sends the note as plain, unencrypted text through that app - "
+                    "unlike sharing within CipherNotes above, this leaves the note's "
+                    "encryption entirely once it's sent. Only use this for content "
+                    "you're fine having outside CipherNotes."
+                )
+                import urllib.parse as _urllib_parse
+                share_text = f"{note['title']}\n\n{current_text}"
+                whatsapp_url = "https://wa.me/?text=" + _urllib_parse.quote(share_text)
+                st.link_button("Share via WhatsApp", whatsapp_url)
+
+                st.caption(
+                    "Instagram doesn't offer a way to pre-fill message text from a "
+                    "website the way WhatsApp does. Copy the note below, then open "
+                    "Instagram and paste it into a DM yourself."
+                )
+                st.code(share_text, language=None)
+                st.link_button("Open Instagram", "https://www.instagram.com/direct/inbox/")
 
                 # --- Version history ---
                 st.divider()
