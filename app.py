@@ -403,7 +403,7 @@ else:
                         else:
                             st.error(error)
 
-               my_shares = [s for s in db.list_my_shares(user_id) if s["source_note_id"] == note["id"]]
+                my_shares = [s for s in db.list_my_shares(user_id) if s["source_note_id"] == note["id"]]
                 if my_shares:
                     st.caption("Currently shared with:")
                     for s in my_shares:
