@@ -60,7 +60,21 @@ if DATABASE_URL.startswith("sqlite"):
     # allow SQLite to be used from Streamlit's multi-threaded server
     _connect_args = {"check_same_thread": False}
 
-engine = create_engine(DATABASE_URL, connect_args=_connect_args)
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=_connect_args,
+    # Free-tier hosted Postgres (Neon, Supabase, etc.) closes idle
+    # connections in the background, especially after the database
+    # auto-suspends from inactivity. Without these, SQLAlchemy can hand
+    # out a connection from its pool that's already dead, causing
+    # "SSL connection has been closed unexpectedly" errors. pool_pre_ping
+    # tests each connection with a lightweight query before using it and
+    # transparently reconnects if needed; pool_recycle proactively
+    # replaces connections older than 5 minutes so they're refreshed
+    # before the server has a chance to drop them.
+    pool_pre_ping=True,
+    pool_recycle=300,
+)
 
 if DATABASE_URL.startswith("sqlite"):
     # WAL mode lets multiple people read/write at the same time without
